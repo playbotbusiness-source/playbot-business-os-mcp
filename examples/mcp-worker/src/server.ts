@@ -30,3 +30,16 @@ function createServer(env: Env) {
       };
     }
   );
+
+  return server;
+}
+
+export default {
+  fetch(request, env, ctx) {
+    return createMcpHandler(() => createServer(env as Env))(
+      request,
+      env,
+      ctx
+    );
+  }
+} satisfies ExportedHandler;
