@@ -27,7 +27,18 @@ function bytesToBase64(bytes: Uint8Array): string {
 function getEncryptionKey(env: Env): Uint8Array {
   const hex = env.GOOGLE_TOKEN_ENCRYPTION_KEY;
 
-  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+  const isString = typeof hex === "string";
+  const length = isString ? hex.length : null;
+  const validHex =
+    isString && /^[0-9a-fA-F]{64}$/.test(hex);
+
+  if (!validHex) {
+    console.error("Encryption key validation failed", {
+      isString,
+      length,
+      validHex
+    });
+
     throw new Error("Invalid encryption key configuration");
   }
 
@@ -35,6 +46,7 @@ function getEncryptionKey(env: Env): Uint8Array {
   for (let i = 0; i < 32; i++) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   }
+
   return bytes;
 }
 
