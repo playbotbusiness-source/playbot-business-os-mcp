@@ -264,6 +264,7 @@ async function handleOAuth(
   return new Response("Not found.", { status: 404 });
 }
 
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -284,10 +285,12 @@ export default {
           { status: 500 }
         );
       }
+    }
 
     return createMcpHandler(() => createServer(env as Env))(
       request,
       env,
       ctx
-    );  }
-} as ExportedHandler;
+    );
+  }
+} satisfies ExportedHandler;
