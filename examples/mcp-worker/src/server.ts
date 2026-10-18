@@ -271,13 +271,19 @@ export default {
     if (url.pathname.startsWith("/oauth/google/")) {
       try {
         return await handleOAuth(request, env as Env);
-      } catch {
+      } catch (error) {
+        console.error(
+          "OAuth processing failed:",
+          error instanceof Error
+            ? `${error.name}: ${error.message}`
+            : "Unknown error"
+        );
+
         return new Response(
           "OAuth processing failed. Check the Worker logs and configuration.",
           { status: 500 }
         );
       }
-    }
 
     return createMcpHandler(() => createServer(env as Env))(
       request,
