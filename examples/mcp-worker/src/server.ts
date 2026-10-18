@@ -289,6 +289,5 @@ export default {
       request,
       env,
       ctx
-    );
-  }
-} satisfies ExportedHandler;
+    );  }
+} as ExportedHandler;
