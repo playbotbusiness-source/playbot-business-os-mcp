@@ -238,6 +238,71 @@ function createServer(env: Env) {
     })
   );
 
+  
+  server.registerTool(
+    "google_drive_list_files",
+    {
+      description:
+        "Lists Google Drive files accessible to PlayBot Business OS. Supports an optional Google Drive search query, page size, and page token.",
+      inputSchema: {
+        query: z.string().optional(),
+        pageSize: z.number().int().min(1).max(100).optional(),
+        pageToken: z.string().optional()
+      }
+    },
+    async ({ query, pageSize, pageToken }) => {
+      const accessToken = await getGoogleAccessToken(env);
+
+      const params = new URLSearchParams({
+        pageSize: String(pageSize ?? 20),
+        fields:
+          "nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)",
+        q: query?.trim()
+          ? `trashed = false and (${query.trim()})`
+          : "trashed = false"
+      });
+
+      if (pageToken) {
+        params.set("pageToken", pageToken);
+      }
+
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?${params}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Google Drive request failed (${response.status})`
+        );
+      }
+
+      const result = await response.json() as {
+        nextPageToken?: string;
+        files?: Array<{
+          id: string;
+          name: string;
+          mimeType?: string;
+          modifiedTime?: string;
+          webViewLink?: string;
+        }>;
+      };
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    }
+  );
+
   return server;
 }
 
