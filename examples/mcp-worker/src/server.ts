@@ -303,6 +303,209 @@ function createServer(env: Env) {
     }
   );
 
+  server.registerTool(
+    "google_sheets_list_spreadsheets",
+    {
+      description:
+        "Lists Google Sheets spreadsheets accessible to PlayBot Business OS.",
+      inputSchema: {
+        query: z.string().optional(),
+        pageSize: z.number().int().min(1).max(100).optional()
+      }
+    },
+    async ({ query, pageSize }) => {
+      const accessToken = await getGoogleAccessToken(env);
+
+      const params = new URLSearchParams({
+        pageSize: String(pageSize ?? 20),
+        orderBy: "modifiedTime desc",
+        fields:
+          "files(id,name,mimeType,modifiedTime,webViewLink)",
+        q: "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+      });
+
+      if (query?.trim()) {
+        const safeQuery = query.trim()
+          .replace(/\\/g, "\\\\")
+          .replace(/'/g, "\\'");
+        params.set(
+          "q",
+          `mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and name contains '${safeQuery}'`
+        );
+      }
+
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?${params}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Google Sheets listing failed (${response.status})`
+        );
+      }
+
+      const result = await response.json();
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "google_sheets_read",
+    {
+      description:
+        "Reads cell values from a Google spreadsheet ID and A1 range, for example Sheet1!A1:D20.",
+      inputSchema: {
+        spreadsheetId: z.string().min(1),
+        range: z.string().min(1)
+      }
+    },
+    async ({ spreadsheetId, range }) => {
+      const accessToken = await getGoogleAccessToken(env);
+
+      const url =
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
+        `/values/${encodeURIComponent(range)}`;
+
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Google Sheets read failed (${response.status}): ${await response.text()}`
+        );
+      }
+
+      const result = await response.json();
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "google_sheets_append",
+    {
+      description:
+        "Appends rows to a Google spreadsheet. Provide the spreadsheet ID, target range and a two-dimensional array of cell values.",
+      inputSchema: {
+        spreadsheetId: z.string().min(1),
+        range: z.string().min(1),
+        values: z.array(
+          z.array(z.string())
+        ).min(1).max(500)
+      }
+    },
+    async ({ spreadsheetId, range, values }) => {
+      if (values.some(row => row.length === 0)) {
+        throw new Error("Rows must contain at least one cell.");
+      }
+
+      const accessToken = await getGoogleAccessToken(env);
+
+      const params = new URLSearchParams({
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS"
+      });
+
+      const url =
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
+        `/values/${encodeURIComponent(range)}:append?${params}`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ values })
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Google Sheets append failed (${response.status}): ${await response.text()}`
+        );
+      }
+
+      const result = await response.json();
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "google_sheets_update",
+    {
+      description:
+        "Updates an exact A1 range in a Google spreadsheet. Existing cell values in the specified range will be overwritten.",
+      inputSchema: {
+        spreadsheetId: z.string().min(1),
+        range: z.string().min(1),
+        values: z.array(
+          z.array(z.string())
+        ).min(1).max(500)
+      }
+    },
+    async ({ spreadsheetId, range, values }) => {
+      if (values.some(row => row.length === 0)) {
+        throw new Error("Rows must contain at least one cell.");
+      }
+
+      const accessToken = await getGoogleAccessToken(env);
+
+      const params = new URLSearchParams({
+        valueInputOption: "USER_ENTERED"
+      });
+
+      const url =
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
+        `/values/${encodeURIComponent(range)}?${params}`;
+
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ values })
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Google Sheets update failed (${response.status}): ${await response.text()}`
+        );
+      }
+
+      const result = await response.json();
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
+
+  
   return server;
 }
 
