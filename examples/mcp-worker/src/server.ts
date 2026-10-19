@@ -79,6 +79,143 @@ async function encryptTokens(
   });
 }
 
+
+type GoogleTokens = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+  token_type?: string;
+  scope?: string;
+  email?: string;
+};
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+async function decryptTokens(
+  env: Env,
+  encrypted: string
+): Promise<GoogleTokens> {
+  const record = JSON.parse(encrypted) as {
+    version?: number;
+    iv?: string;
+    ciphertext?: string;
+  };
+
+  if (
+    record.version !== 1 ||
+    typeof record.iv !== "string" ||
+    typeof record.ciphertext !== "string"
+  ) {
+    throw new Error("Invalid encrypted token record");
+  }
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    getEncryptionKey(env),
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"]
+  );
+
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: base64ToBytes(record.iv)
+    },
+    key,
+    base64ToBytes(record.ciphertext)
+  );
+
+  return JSON.parse(
+    new TextDecoder().decode(plaintext)
+  ) as GoogleTokens;
+}
+
+async function getGoogleAccessToken(
+  env: Env
+): Promise<string> {
+  const encrypted = await env.AUTH_KV.get(TOKEN_KEY);
+
+  if (!encrypted) {
+    throw new Error("Google authorization is missing");
+  }
+
+  const stored = await decryptTokens(env, encrypted);
+
+  if (
+    stored.access_token &&
+    typeof stored.expires_at === "number" &&
+    stored.expires_at > Date.now() + 60_000
+  ) {
+    return stored.access_token;
+  }
+
+  if (!stored.refresh_token) {
+    throw new Error("Google refresh token is missing");
+  }
+
+  const response = await fetch(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        refresh_token: stored.refresh_token,
+        grant_type: "refresh_token"
+      })
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Google token refresh failed (${response.status})`
+    );
+  }
+
+  const refreshed = await response.json() as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    token_type?: string;
+    scope?: string;
+  };
+
+  if (!refreshed.access_token) {
+    throw new Error("Google returned no access token");
+  }
+
+  const updated: GoogleTokens = {
+    ...stored,
+    access_token: refreshed.access_token,
+    refresh_token:
+      refreshed.refresh_token ?? stored.refresh_token,
+    expires_at:
+      Date.now() + (refreshed.expires_in ?? 3600) * 1000,
+    token_type: refreshed.token_type ?? stored.token_type,
+    scope: refreshed.scope ?? stored.scope
+  };
+
+  await env.AUTH_KV.put(
+    TOKEN_KEY,
+    await encryptTokens(env, updated)
+  );
+
+  return updated.access_token;
+}
+
 function createServer(env: Env) {
   const server = new McpServer({
     name: "Hello MCP Server",
