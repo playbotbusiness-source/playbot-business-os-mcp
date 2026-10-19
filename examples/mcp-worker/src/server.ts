@@ -330,8 +330,8 @@ async function handleOAuth(
       redirect_uri: REDIRECT_URI,
       response_type: "code",
       scope:
-        "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets",
-      state,
+  "openid email https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets",
+     state,
       access_type: "offline",
       prompt: "consent"
     }).toString();
